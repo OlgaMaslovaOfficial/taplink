@@ -22,6 +22,10 @@
   .hero .l img{object-position:40% 25%}
   .hero .r{right:4%;width:30%;top:34%;height:52%;z-index:1}
   .hero .r img{object-position:55% 28%}
+  .hero{perspective:900px}
+  .hero figure,.hero .name{will-change:transform;transform-style:preserve-3d;backface-visibility:hidden}
+  .hero img{transform:scale(1.1);will-change:transform}
+  #sparkles{will-change:transform}
   .hero figure::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,0) 45%,rgba(0,0,0,.75) 100%)}
   .hero .name{position:absolute;left:20px;right:20px;bottom:0;margin:0;z-index:3;text-shadow:0 2px 24px rgba(0,0,0,.6)}
   .photo{position:relative;z-index:1;display:block;width:100%;aspect-ratio:4/5;object-fit:cover;filter:grayscale(1);margin-top:22px}
@@ -165,7 +169,7 @@ var TEXT = {
       x.beginPath(); x.moveTo(s.x-L,s.y); x.lineTo(s.x+L,s.y); x.moveTo(s.x,s.y-L); x.lineTo(s.x,s.y+L); x.stroke(); }
   }
   /* Падающие звёзды: редкие, по диагонали, с мягким хвостом */
-  var meteors=[], nextM=1500+Math.random()*2500;
+  var meteors=[], nextM=600+Math.random()*1200;
   function meteor(){ var ang=(18+Math.random()*22)*Math.PI/180, dir=Math.random()<0.5?1:-1;
     return {x:Math.random()*W, y:Math.random()*H*0.85, vx:Math.cos(ang)*dir, vy:Math.sin(ang),
       sp:0.45+Math.random()*0.4, len:90+Math.random()*120, life:0, dur:900+Math.random()*900, max:0.55+Math.random()*0.35}; }
@@ -177,7 +181,7 @@ var TEXT = {
     x.fillStyle=h; x.beginPath(); x.arc(hx,hy,4,0,Math.PI*2); x.fill(); }
   var last=performance.now();
   function tick(t){ var dt=Math.min(t-last,60); last=t; x.clearRect(0,0,W,H);
-    nextM-=dt; if(nextM<=0){ meteors.push(meteor()); if(Math.random()<0.2) meteors.push(meteor()); nextM=2500+Math.random()*4500; }
+    nextM-=dt; if(nextM<=0){ meteors.push(meteor()); if(Math.random()<0.3) meteors.push(meteor()); nextM=1200+Math.random()*2300; }
     for(var j=meteors.length-1;j>=0;j--){ var m=meteors[j]; m.life+=dt; if(m.life>=m.dur){ meteors.splice(j,1); continue; } drawM(m); }
     for(var i=0;i<stars.length;i++){ var s=stars[i];
       if(s.delay>0){ s.delay-=dt; continue; }
@@ -191,6 +195,47 @@ var TEXT = {
   if(reduce){ still(); return; }
   document.addEventListener("visibilitychange",function(){ if(document.hidden){ cancelAnimationFrame(raf); raf=null; } else if(!raf){ last=performance.now(); raf=requestAnimationFrame(tick); } });
   raf=requestAnimationFrame(tick);
+})();
+</script>
+<script>
+/* Живая глубина: фото разворачиваются за курсором или наклоном телефона */
+(function(){
+  var hero=document.querySelector(".hero"); if(!hero) return;
+  if(window.matchMedia&&window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  var L=[ {el:hero.querySelector(".l"), d:1.0},
+          {el:hero.querySelector(".c"), d:0.55},
+          {el:hero.querySelector(".r"), d:1.25},
+          {el:hero.querySelector(".name"), d:-0.35, flat:true} ];
+  var sp=document.getElementById("sparkles");
+  var tx=0,ty=0,cx=0,cy=0,raf=null,lastInput=0,hasTilt=false,t0=performance.now();
+  function setTarget(x,y){ tx=Math.max(-1,Math.min(1,x)); ty=Math.max(-1,Math.min(1,y)); lastInput=performance.now(); kick(); }
+  window.addEventListener("pointermove",function(e){ if(e.pointerType==="touch") return;
+    setTarget(e.clientX/window.innerWidth*2-1, e.clientY/window.innerHeight*2-1); },{passive:true});
+  document.addEventListener("mouseleave",function(){ setTarget(0,0); });
+  function onTilt(e){ if(e.gamma==null) return; hasTilt=true;
+    setTarget(e.gamma/25, (e.beta-45)/25); }
+  function listenTilt(){ window.addEventListener("deviceorientation",onTilt,{passive:true}); }
+  if(window.DeviceOrientationEvent && typeof DeviceOrientationEvent.requestPermission==="function"){
+    /* iPhone спрашивает разрешение после первого касания */
+    var ask=function(){ DeviceOrientationEvent.requestPermission().then(function(r){ if(r==="granted") listenTilt(); }).catch(function(){});
+      window.removeEventListener("touchend",ask); };
+    window.addEventListener("touchend",ask,{once:true});
+  } else if(window.DeviceOrientationEvent){ listenTilt(); }
+  function frame(t){
+    /* без курсора и наклона: медленное «дыхание» композиции */
+    if(t-lastInput>2500){ var k=(t-t0)/1000; tx=Math.sin(k*0.35)*0.45; ty=Math.sin(k*0.27)*0.3; }
+    cx+=(tx-cx)*0.06; cy+=(ty-cy)*0.06;
+    L.forEach(function(o){ if(!o.el) return; var d=o.d;
+      if(o.flat){ o.el.style.transform="translate3d("+(cx*10*d)+"px,"+(cy*6*d)+"px,0)"; return; }
+      o.el.style.transform="translate3d("+(cx*14*d)+"px,"+(cy*10*d)+"px,0) rotateY("+(cx*7*d)+"deg) rotateX("+(-cy*5*d)+"deg)";
+      var img=o.el.firstElementChild; if(img) img.style.transform="scale(1.1) translate3d("+(-cx*8*d)+"px,"+(-cy*6*d)+"px,0)";
+    });
+    if(sp) sp.style.transform="translate3d("+(-cx*6)+"px,"+(-cy*6)+"px,0)";
+    raf=requestAnimationFrame(frame);
+  }
+  function kick(){ if(!raf&&!document.hidden) raf=requestAnimationFrame(frame); }
+  document.addEventListener("visibilitychange",function(){ if(document.hidden){ cancelAnimationFrame(raf); raf=null; } else kick(); });
+  kick();
 })();
 </script>
 </body>
